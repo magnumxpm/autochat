@@ -1,7 +1,10 @@
+from .chat import AutoChat
+from .config import ChatConfig
 from .exceptions import (
     AutoChatError,
     AutoChatToolError,
 )
+from .guidelines import ChatGuideline
 from .runtime import (
     ChatRuntime,
 )
@@ -15,6 +18,8 @@ from .tools import (
 
 __version__ = "0.1.0"
 __all__ = [
+    "AutoChat",
+    "ChatConfig",
     "AutoChatError",
     "AutoChatToolError",
     "ChatRuntime",
@@ -23,4 +28,5 @@ __all__ = [
     "ToolPostprocessor",
     "ToolPreprocessor",
     "chat_tool",
+    "ChatGuideline",
 ]
