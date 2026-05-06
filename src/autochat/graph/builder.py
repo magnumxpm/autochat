@@ -51,12 +51,7 @@ def build_chat_graph(
     chat_config = config
     model = chat_config.model
     if tools:
-        # TODO: for primitive ChatTool, expose tool as model tool schemas cleanly
-
-        # For BaseTool-based ChatTools
-        model = model.bind_tools(
-            [tool.raw_tool for tool in tools if hasattr(tool.raw_tool, "name")]
-        )
+        model = model.bind_tools([tool.model_tool() for tool in tools])
 
     async def call_model(
         state: ChatGraphState,

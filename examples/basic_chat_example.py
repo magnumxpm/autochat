@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-from autochat import AutoChat, ChatConfig, ChatGuideline, ChatTool
+from autochat import AutoChat, ChatConfig, ChatRuntime
+from autochat.guidelines import ChatGuideline
+from autochat.tools import ChatTool, chat_tool
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,22 +21,32 @@ def get_org_status(org_id: str) -> str:
     return f"Organization {org_id} is active and has no open incidents."
 
 
+@chat_tool(
+    name="calculator",
+    description="Best tool for performing calculations. Always use this tool for math problems.",
+)
+async def calculator(a: int, b: int, runtime: ChatRuntime[AppContext]) -> float:
+    print(runtime.thread_id)
+    return a + b
+
+
 async def main() -> None:
     chat = AutoChat[AppContext](
         config=ChatConfig(
             model=ChatOpenAI(model="gpt-5-nano"),
         ),
-        tools=[
-            ChatTool(get_org_status),
-        ],
+        tools=[ChatTool(get_org_status), calculator],
         system_message=(
             "You are a concise assistant. Use tools when they are relevant."
         ),
-        guidelines=[ChatGuideline("Always respond in French")],
+        guidelines=[
+            ChatGuideline("Always answer in French."),
+            ChatGuideline("Always use words for numbers."),
+        ],
     )
 
     result = await chat.ainvoke(
-        "Check the status for org_123 and summarize it in two sentences.",
+        "What is 1 + 1",
         thread_id="thread_basic_chat_example",
         context=AppContext(
             user_id="user_1",

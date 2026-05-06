@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from pydantic import BaseModel
+
 from autochat import (
     ChatRuntime,
     ToolInvocation,
@@ -18,8 +20,12 @@ class AppContext:
     permissions: set[str]
 
 
+class BillingInput(BaseModel):
+    invoice_id: str
+
+
 def require_permission(permission: str):
-    def processor(invocation: ToolInvocation[AppContext, str]) -> str:
+    def processor(invocation: ToolInvocation[AppContext, BillingInput]) -> BillingInput:
         if permission not in invocation.runtime.context.permissions:
             raise UserNotAuthorizedForTool(f"Missing permission: {permission}")
 
@@ -28,13 +34,23 @@ def require_permission(permission: str):
     return processor
 
 
+def hello_world():
+    def processor(invocation):
+        print("Hello World!")
+        invocation.input.invoice_id = "Hello World!"
+        return invocation.input
+
+    return processor
+
+
 @chat_tool(
     name="get_billing_info",
     description="Fetch billing information for the current organization.",
-    preprocessors=[require_permission("billing.read")],
+    preprocessors=[require_permission("billing.read"), hello_world()],
+    args_schema=BillingInput,
 )
 async def get_billing_info(
-    input: str,
+    input: BillingInput,
     runtime: ChatRuntime[AppContext],
 ) -> str:
     org_id = runtime.context.org_id
@@ -52,7 +68,7 @@ runtime = ChatRuntime(
 
 
 async def main():
-    result = await get_billing_info.ainvoke("latest invoice", runtime)
+    result = await get_billing_info.ainvoke(BillingInput(invoice_id="123"), runtime)
     print(result)
 
 

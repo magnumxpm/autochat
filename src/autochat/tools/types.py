@@ -1,6 +1,6 @@
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any, Generic, Protocol, TypeAlias, TypeVar
+from typing import Any, Callable, Generic, Protocol, TypeAlias, TypeVar
 
 from langchain_core.messages import ToolCall
 from langchain_core.tools import BaseTool
@@ -45,9 +45,4 @@ class ToolPostprocessor(Protocol[TContext, TInput, TResult]):
     ) -> MaybeAwaitable[TResult]: ...
 
 
-class ContextToolFn(Protocol[TContext, TInput_contra, TResult_co]):
-    def __call__(
-        self,
-        input: TInput_contra,
-        runtime: ChatRuntime[TContext],
-    ) -> MaybeAwaitable[TResult_co]: ...
+ContextToolFn: TypeAlias = Callable[..., MaybeAwaitable[Any]]
