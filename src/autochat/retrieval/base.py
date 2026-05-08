@@ -10,9 +10,9 @@ from autochat.tools.base import maybe_await
 
 from .documents import RetrievedDocument
 from .types import (
+    RetrievalInvocation,
     RetrieverDocument,
     RetrieverFn,
-    RetrievalInvocation,
     RetrieverPostprocessor,
     RetrieverPreprocessor,
 )
@@ -118,6 +118,26 @@ class ChatRetriever(Generic[TContext]):
             return getattr(retriever, "description", None)
 
         return inspect.getdoc(retriever)
+
+    def model_tool(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description
+                or f"Retrieve relevant context from {self.name}.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query to retrieve relevant context for.",
+                        }
+                    },
+                    "required": ["query"],
+                },
+            },
+        }
 
     def _make_invocation(
         self,
