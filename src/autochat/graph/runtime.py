@@ -12,11 +12,14 @@ def with_runtime_config(
     config: RunnableConfig | None,
     runtime: ChatRuntime[TContext],
 ) -> RunnableConfig:
-    graph_config: dict[str, Any] = dict(config or {})
-    configurable = dict(cast(Mapping[str, Any], graph_config.get("configurable", {})))
+    merged: dict[str, Any] = dict(config or {})
+    configurable = dict(merged.get("configurable", {}))
+
+    configurable["thread_id"] = runtime.thread_id
     configurable[_RUNTIME_CONFIG_KEY] = runtime
-    graph_config["configurable"] = configurable
-    return cast(RunnableConfig, graph_config)
+
+    merged["configurable"] = configurable
+    return cast(RunnableConfig, merged)
 
 
 def get_runtime(

@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from autochat.config import ChatConfig
 from autochat.graph.builder import build_chat_graph
@@ -23,6 +24,7 @@ class AutoChat(Generic[TContext]):
         tools: Sequence[ChatTool[TContext, Any, Any]] = (),
         retrievers: Sequence[ChatRetriever[TContext]] = (),
         retrieval: RetrievalConfig[TContext] | None = None,
+        persistence: BaseCheckpointSaver | None = None,
         system_message: str | None = None,
         guidelines: Sequence[ChatGuideline] = (),
     ) -> None:
@@ -32,6 +34,7 @@ class AutoChat(Generic[TContext]):
         self.retrieval = retrieval or RetrievalConfig()
         self.system_message = system_message
         self.guidelines = tuple(guidelines)
+        self.persistence = persistence
 
         self._graph = build_chat_graph(
             config=config,
@@ -40,6 +43,7 @@ class AutoChat(Generic[TContext]):
             retrieval=self.retrieval,
             system_message=system_message,
             guidelines=self.guidelines,
+            persistence=persistence,
         )
 
     def _runtime(

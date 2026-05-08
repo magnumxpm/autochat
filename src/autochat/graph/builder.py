@@ -3,6 +3,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -63,6 +64,7 @@ def build_chat_graph(
     retrieval: RetrievalConfig[Any],
     system_message: str | None,
     guidelines: Sequence[ChatGuideline],
+    persistence: BaseCheckpointSaver | None,
 ) -> CompiledStateGraph:
     graph = StateGraph(ChatGraphState)
     system_messages = build_system_messages(system_message, guidelines)
@@ -120,4 +122,4 @@ def build_chat_graph(
     graph.add_conditional_edges("agent", should_continue)
     graph.add_edge("tools", "agent")
 
-    return graph.compile()
+    return graph.compile(checkpointer=persistence)
