@@ -288,6 +288,11 @@ class ChatTool(Generic[TContext, TInput, TResult]):
             input_data = {"input": input}
 
         kwargs: dict[str, Any] = {}
+        input_parameters = [
+            parameter
+            for name, parameter in signature.parameters.items()
+            if not self._is_runtime_parameter(name)
+        ]
 
         for name, parameter in signature.parameters.items():
             if self._is_runtime_parameter(name):
@@ -296,6 +301,10 @@ class ChatTool(Generic[TContext, TInput, TResult]):
 
             if name in input_data:
                 kwargs[name] = input_data[name]
+                continue
+
+            if len(input_parameters) == 1 and isinstance(input, BaseModel):
+                kwargs[name] = input
                 continue
 
             if parameter.default is inspect.Parameter.empty:

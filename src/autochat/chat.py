@@ -8,6 +8,7 @@ from autochat.config import ChatConfig
 from autochat.graph.builder import build_chat_graph
 from autochat.graph.runtime import with_runtime_config
 from autochat.guidelines import ChatGuideline
+from autochat.retrieval import ChatRetriever, RetrievalConfig
 from autochat.runtime import ChatRuntime
 from autochat.tools import ChatTool
 
@@ -20,17 +21,23 @@ class AutoChat(Generic[TContext]):
         *,
         config: ChatConfig,
         tools: Sequence[ChatTool[TContext, Any, Any]] = (),
+        retrievers: Sequence[ChatRetriever[TContext]] = (),
+        retrieval: RetrievalConfig[TContext] | None = None,
         system_message: str | None = None,
         guidelines: Sequence[ChatGuideline] = (),
     ) -> None:
         self.config = config
         self.tools = tuple(tools)
+        self.retrievers = tuple(retrievers)
+        self.retrieval = retrieval or RetrievalConfig()
         self.system_message = system_message
         self.guidelines = tuple(guidelines)
 
         self._graph = build_chat_graph(
             config=config,
             tools=self.tools,
+            retrievers=self.retrievers,
+            retrieval=self.retrieval,
             system_message=system_message,
             guidelines=self.guidelines,
         )

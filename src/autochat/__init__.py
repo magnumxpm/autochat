@@ -5,6 +5,18 @@ from .exceptions import (
     AutoChatToolError,
 )
 from .guidelines import ChatGuideline
+from .retrieval import (
+    ChatRetriever,
+    RAGStrategy,
+    RetrievedDocument,
+    RetrievalConfig,
+    RetrievalInvocation,
+    RetrievalResult,
+    RetrieverFn,
+    RetrieverPostprocessor,
+    RetrieverPreprocessor,
+    SimpleRAGStrategy,
+)
 from .runtime import (
     ChatRuntime,
 )
@@ -23,6 +35,16 @@ __all__ = [
     "AutoChatError",
     "AutoChatToolError",
     "ChatRuntime",
+    "ChatRetriever",
+    "RetrievalConfig",
+    "RetrievedDocument",
+    "RetrievalResult",
+    "RAGStrategy",
+    "SimpleRAGStrategy",
+    "RetrievalInvocation",
+    "RetrieverFn",
+    "RetrieverPostprocessor",
+    "RetrieverPreprocessor",
     "ChatTool",
     "ToolInvocation",
     "ToolPostprocessor",

@@ -101,6 +101,7 @@ Run the included examples:
 ```bash
 uv run python examples/basic_tool_example.py
 OPENAI_API_KEY=... uv run --dev python examples/basic_chat_example.py
+OPENAI_API_KEY=... uv run --dev python examples/basic_retriever_example.py
 ```
 
 ## Tool Processors
@@ -132,6 +133,24 @@ async def billing_status(runtime: ChatRuntime[AppContext]) -> str:
     return "Billing is active."
 ```
 
+## Retrieval
+
+Retrievers can be added beside tools. AutoChat runs them before the model and injects the retrieved context into the graph.
+
+```python
+from autochat import ChatRetriever, ChatRuntime
+
+
+async def search_docs(query: str, runtime: ChatRuntime[AppContext]) -> list[str]:
+    return [f"Docs for {runtime.context.user_id}: {query}"]
+
+
+chat = AutoChat[AppContext](
+    config=ChatConfig(model=model),
+    retrievers=[ChatRetriever(search_docs, name="docs")],
+)
+```
+
 ## Core Pieces
 
 - `AutoChat`: public chat harness for invoke and stream workflows
@@ -139,6 +158,8 @@ async def billing_status(runtime: ChatRuntime[AppContext]) -> str:
 - `ChatRuntime[TContext]`: per-run context passed through graph/tool execution
 - `ChatTool`: wrapper for LangChain tools and AutoChat-native tools
 - `@chat_tool`: decorator for native context-aware tools
+- `ChatRetriever`: wrapper for LangChain retrievers and AutoChat-native retrievers
+- `RetrievalConfig`: graph-level retrieval strategy configuration
 - `ChatGuideline`: lightweight instruction primitive for reusable behavior rules
 
 ## Project Structure
@@ -152,12 +173,14 @@ src/autochat/
   guidelines.py        Lightweight guideline primitives
   runtime/             Invocation-scoped runtime context
   tools/               ChatTool, @chat_tool, processor types
+  retrieval/           ChatRetriever, retrieval config, RAG strategies
   graph/               LangGraph state, builder, runtime wiring, tool execution
   exceptions/          Library exception types
 
 examples/
-  basic_tool_example.py  Context-aware tool and processor example
-  basic_chat_example.py  AutoChat + model + tools example
+  basic_tool_example.py       Context-aware tool and processor example
+  basic_chat_example.py       AutoChat + model + tools example
+  basic_retriever_example.py  AutoChat + retriever example
 ```
 
 The intended dependency direction is:
@@ -165,7 +188,7 @@ The intended dependency direction is:
 ```text
 AutoChat
   -> graph
-      -> tools
+      -> tools / retrieval
           -> runtime
 ```
 
@@ -178,6 +201,7 @@ Before changing internals, run the examples when relevant:
 ```bash
 uv run python examples/basic_tool_example.py
 uv run --dev python examples/basic_chat_example.py
+uv run --dev python examples/basic_retriever_example.py
 ```
 
 Design preferences:

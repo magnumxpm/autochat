@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from langchain_core.tools import tool
 from pydantic import BaseModel
 
 from autochat import (
