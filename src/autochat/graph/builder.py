@@ -9,9 +9,14 @@ from langgraph.graph.state import CompiledStateGraph
 
 from autochat.compression import AutoCompress
 from autochat.config import ChatConfig
+from autochat.events.dispatch import (
+    emit_compression_end,
+    emit_compression_start,
+    emit_error,
+)
+from autochat.graph.runtime import get_runtime
 from autochat.graph.state import ChatGraphState, ChatGraphUpdate
 from autochat.graph.tools import run_tool_calls
-from autochat.graph.runtime import get_runtime
 from autochat.guidelines import ChatGuideline
 from autochat.retrieval import (
     ChatRetriever,
@@ -88,17 +93,21 @@ def build_chat_graph(
         state: ChatGraphState,
         config: RunnableConfig,
     ) -> ChatGraphUpdate:
-        messages: list[BaseMessage] = [
-            *system_messages,
-            *state["messages"],
-        ]
+        try:
+            messages: list[BaseMessage] = [
+                *system_messages,
+                *state["messages"],
+            ]
 
-        response = await model.ainvoke(
-            messages, config=config, **(chat_config.model_kwargs or {})
-        )
+            response = await model.ainvoke(
+                messages, config=config, **(chat_config.model_kwargs or {})
+            )
 
-        response_messages: list[BaseMessage] = [response]
-        return {"messages": response_messages}
+            response_messages: list[BaseMessage] = [response]
+            return {"messages": response_messages}
+        except Exception as e:
+            await emit_error(node="agent", error=str(e))
+            raise
 
     async def call_tools(
         state: ChatGraphState,
@@ -125,13 +134,42 @@ def build_chat_graph(
         if compression is None:
             return {"messages": []}
 
-        messages = await compression.acompress_if_needed(
-            list(state["messages"]),
-            runtime=get_runtime(config),
-            config=chat_config,
+        strategy_name = type(compression.strategy).__name__
+        before_count = len(state["messages"])
+        await emit_compression_start(
+            strategy=strategy_name,
+            message_count_before=before_count,
         )
+
+        try:
+            messages = await compression.acompress_if_needed(
+                list(state["messages"]),
+                runtime=get_runtime(config),
+                config=chat_config,
+            )
+        except Exception as e:
+            await emit_compression_end(
+                strategy=strategy_name,
+                compressed=False,
+                message_count_after=before_count,
+            )
+            await emit_error(node="compression", error=str(e))
+            raise
+
         if messages is None:
+            await emit_compression_end(
+                strategy=strategy_name,
+                compressed=False,
+                message_count_after=before_count,
+            )
+
             return {"messages": []}
+
+        await emit_compression_end(
+            strategy=strategy_name,
+            compressed=True,
+            message_count_after=len(messages),
+        )
 
         return {"messages": messages}
 

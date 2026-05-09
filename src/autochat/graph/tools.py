@@ -5,6 +5,11 @@ from typing import Any
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 
+from autochat.events.dispatch import (
+    emit_error,
+    emit_tool_request,
+    emit_tool_response,
+)
 from autochat.graph.retrievers import run_retriever_call
 from autochat.graph.runtime import get_runtime
 from autochat.retrieval import ChatRetriever
@@ -35,12 +40,34 @@ async def run_tool_calls(
 
     for tool_call in last_message.tool_calls:
         name = tool_call["name"]
+        tool_call_id = tool_call.get("id") or ""
         tool = tools_by_name.get(name)
 
         if tool is not None:
             args = tool_call.get("args", {})
-            result = await tool.ainvoke(args, runtime)
+
+            await emit_tool_request(
+                name=name,
+                tool_call_id=tool_call_id,
+                args=args,
+            )
+            try:
+                result = await tool.ainvoke(args, runtime)
+            except Exception as e:
+                await emit_tool_response(
+                    name=name,
+                    tool_call_id=tool_call_id,
+                    error=str(e),
+                )
+                await emit_error(node="tools", error=str(e))
+                raise
+
             content = serialize_tool_result(result)
+            await emit_tool_response(
+                name=name,
+                tool_call_id=tool_call_id,
+                result=result,
+            )
 
         elif name in retrievers_by_name:
             args = tool_call.get("args", {})
@@ -50,7 +77,7 @@ async def run_tool_calls(
             message = await run_retriever_call(
                 name=name,
                 args=args,
-                tool_call_id=tool_call.get("id") or "",
+                tool_call_id=tool_call_id,
                 retrievers=retrievers,
                 config=config,
             )
@@ -64,7 +91,7 @@ async def run_tool_calls(
         messages.append(
             ToolMessage(
                 content=content,
-                tool_call_id=tool_call.get("id"),
+                tool_call_id=tool_call_id,
                 name=name,
             )
         )

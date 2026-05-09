@@ -5,8 +5,10 @@ from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
-from autochat.config import ChatConfig
 from autochat.compression import AutoCompress
+from autochat.config import ChatConfig
+from autochat.events import AutoChatEvent, ErrorEvent, EventTranslator
+from autochat.events.thinking import ThinkingExtractor, resolve_extractor
 from autochat.graph.builder import build_chat_graph
 from autochat.graph.runtime import with_runtime_config
 from autochat.guidelines import ChatGuideline
@@ -29,6 +31,7 @@ class AutoChat(Generic[TContext]):
         compression: AutoCompress[TContext] | None = None,
         system_message: str | None = None,
         guidelines: Sequence[ChatGuideline] = (),
+        thinking_extractor: ThinkingExtractor | None = None,
     ) -> None:
         self.config = config
         self.tools = tuple(tools)
@@ -38,6 +41,7 @@ class AutoChat(Generic[TContext]):
         self.guidelines = tuple(guidelines)
         self.persistence = persistence
         self.compression = compression
+        self._thinking_extractor = thinking_extractor or resolve_extractor(config.model)
 
         self._graph = build_chat_graph(
             config=config,
@@ -98,7 +102,7 @@ class AutoChat(Generic[TContext]):
         metadata: Mapping[str, Any] | None = None,
         config: RunnableConfig | None = None,
         version: Literal["v1", "v2"] = "v2",
-    ) -> AsyncIterator[Any]:
+    ) -> AsyncIterator[AutoChatEvent]:
         runtime = self._runtime(
             thread_id=thread_id,
             context=context,
@@ -107,7 +111,48 @@ class AutoChat(Generic[TContext]):
         )
 
         graph_config = with_runtime_config(config, runtime)
+        translator = EventTranslator(
+            runtime=runtime,
+            extractor=self._thinking_extractor,
+            input_text=input,
+        )
 
+        try:
+            async for raw in self._graph.astream_events(
+                {"messages": [HumanMessage(content=input)]},
+                config=graph_config,
+                version=version,
+            ):
+                for typed in translator.translate(raw):
+                    yield typed
+        except Exception as e:
+            yield ErrorEvent(
+                run_id=runtime.run_id or "",
+                thread_id=runtime.thread_id,
+                node="autochat",
+                error=str(e),
+            )
+            raise
+
+    async def astream_raw_events(
+        self,
+        input: str,
+        *,
+        thread_id: str,
+        context: TContext,
+        run_id: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        config: RunnableConfig | None = None,
+        version: Literal["v1", "v2"] = "v2",
+    ) -> AsyncIterator[Any]:
+        """Escape hatch: yields raw LangChain stream events (v2)."""
+        runtime = self._runtime(
+            thread_id=thread_id,
+            context=context,
+            run_id=run_id,
+            metadata=metadata,
+        )
+        graph_config = with_runtime_config(config, runtime)
         async for event in self._graph.astream_events(
             {"messages": [HumanMessage(content=input)]},
             config=graph_config,

@@ -7,6 +7,30 @@ from .compression import (
     SummarizeLatestN,
 )
 from .config import ChatConfig
+from .events import (
+    AssistantMessage,
+    AutoChatEvent,
+    CompressionEndEvent,
+    CompressionStartEvent,
+    ErrorEvent,
+    MessageDeltaEvent,
+    MessageEndEvent,
+    MessageStartEvent,
+    RetrieverRequestEvent,
+    RetrieverResponseEvent,
+    RunEndEvent,
+    RunStartEvent,
+    ThinkingBlock,
+    ThinkingDeltaEvent,
+    ThinkingEndEvent,
+    ThinkingExtractor,
+    ThinkingStartEvent,
+    ToolCallRequestEvent,
+    ToolCallResponseEvent,
+    ToolCallSpec,
+    UsageInfo,
+    register_thinking_extractor,
+)
 from .exceptions import (
     AutoChatError,
     AutoChatToolError,
@@ -15,10 +39,10 @@ from .guidelines import ChatGuideline
 from .retrieval import (
     ChatRetriever,
     RAGStrategy,
-    RetrievedDocument,
     RetrievalConfig,
     RetrievalInvocation,
     RetrievalResult,
+    RetrievedDocument,
     RetrieverFn,
     RetrieverPostprocessor,
     RetrieverPreprocessor,
@@ -35,7 +59,7 @@ from .tools import (
     chat_tool,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __all__ = [
     "AutoChat",
     "AutoCompress",
@@ -63,4 +87,26 @@ __all__ = [
     "ToolPreprocessor",
     "chat_tool",
     "ChatGuideline",
+    "AssistantMessage",
+    "AutoChatEvent",
+    "CompressionEndEvent",
+    "CompressionStartEvent",
+    "ErrorEvent",
+    "MessageDeltaEvent",
+    "MessageEndEvent",
+    "MessageStartEvent",
+    "RetrieverRequestEvent",
+    "RetrieverResponseEvent",
+    "RunEndEvent",
+    "RunStartEvent",
+    "ThinkingBlock",
+    "ThinkingDeltaEvent",
+    "ThinkingEndEvent",
+    "ThinkingExtractor",
+    "ThinkingStartEvent",
+    "ToolCallRequestEvent",
+    "ToolCallResponseEvent",
+    "ToolCallSpec",
+    "UsageInfo",
+    "register_thinking_extractor",
 ]
