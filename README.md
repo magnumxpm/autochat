@@ -12,8 +12,6 @@ chat = AutoChat(...)
 
 Then you can invoke or stream the graph while passing your own runtime context into tools, retrievers, processors, and graph execution.
 
-`autochat` is still under construction. It is not published to PyPI yet, but it will soon be installable as `autochat` with `pip`, `uv`, and other standard Python package managers.
-
 ## Why
 
 Most production chat apps need the same foundation:
@@ -29,7 +27,17 @@ Most production chat apps need the same foundation:
 
 ## Installation
 
-For local development:
+```bash
+pip install autochatlib
+```
+
+or with `uv`:
+
+```bash
+uv add autochatlib
+```
+
+For local development of the library itself:
 
 ```bash
 uv sync
@@ -39,18 +47,6 @@ For examples that use OpenAI models:
 
 ```bash
 uv sync --dev
-```
-
-Future install flow:
-
-```bash
-pip install autochat
-```
-
-or:
-
-```bash
-uv add autochat
 ```
 
 ## Quick Start
