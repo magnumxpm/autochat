@@ -19,6 +19,18 @@ class AppContext:
     user_id: str
 
 
+def chunk_text(event: dict) -> str:
+    if event.get("event") != "on_chat_model_stream":
+        return ""
+
+    chunk = event.get("data", {}).get("chunk")
+    content = getattr(chunk, "content", "")
+    if isinstance(content, str):
+        return content
+
+    return str(content)
+
+
 async def main() -> None:
     model = ChatOpenAI(model="gpt-5-nano")
 
@@ -52,13 +64,14 @@ async def main() -> None:
         context=context,
     )
 
-    result = await chat.ainvoke(
+    async for event in chat.astream_events(
         "What am I building, and what is my name?",
         thread_id=thread_id,
         context=context,
-    )
+    ):
+        print(chunk_text(event), end="", flush=True)
 
-    print(result["messages"][-1].content)
+    print()
 
 
 if __name__ == "__main__":
