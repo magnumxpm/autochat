@@ -8,3 +8,4 @@ from langchain.chat_models import BaseChatModel
 class ChatConfig:
     model: BaseChatModel
     model_kwargs: dict[str, Any] | None = None
+    context_window: int | None = None

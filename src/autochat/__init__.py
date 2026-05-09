@@ -1,4 +1,11 @@
 from .chat import AutoChat
+from .compression import (
+    AutoCompress,
+    CompressionStrategy,
+    KeepLatestN,
+    SummarizeAll,
+    SummarizeLatestN,
+)
 from .config import ChatConfig
 from .exceptions import (
     AutoChatError,
@@ -31,7 +38,12 @@ from .tools import (
 __version__ = "0.1.0"
 __all__ = [
     "AutoChat",
+    "AutoCompress",
     "ChatConfig",
+    "CompressionStrategy",
+    "KeepLatestN",
+    "SummarizeAll",
+    "SummarizeLatestN",
     "AutoChatError",
     "AutoChatToolError",
     "ChatRuntime",

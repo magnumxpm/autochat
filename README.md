@@ -1,8 +1,8 @@
 # autochat
 
-`autochat` is a small Python library for building context-aware chat applications with LangGraph, LangChain models, and typed tools.
+`autochat` is a small Python library for building context-aware chat applications on top of LangGraph and LangChain.
 
-It is meant to give you a clean application primitive:
+It gives your app a clean chat harness primitive:
 
 ```python
 from autochat import AutoChat
@@ -10,21 +10,22 @@ from autochat import AutoChat
 chat = AutoChat(...)
 ```
 
-and then let you invoke or stream a graph while passing your own runtime context into tools, processors, and future subgraphs.
+Then you can invoke or stream the graph while passing your own runtime context into tools, retrievers, processors, and graph execution.
 
-`autochat` is still under construction. It is not published to PyPI yet, but it will soon be available as `autochat` and installable with `pip`, `uv`, and other standard Python package managers.
+`autochat` is still under construction. It is not published to PyPI yet, but it will soon be installable as `autochat` with `pip`, `uv`, and other standard Python package managers.
 
 ## Why
 
-Most chat apps need the same harness around the model:
+Most production chat apps need the same foundation:
 
-- a graph to manage model and tool turns
-- tools that can see request/runtime context
-- authorization and cleanup around tool calls
-- a simple invoke/stream API
-- enough structure to stay maintainable as the app grows
+- model and tool orchestration
+- runtime context for auth, tenancy, request metadata, and app services
+- context-aware tools and retrievers
+- thread persistence
+- optional history compression
+- a simple async invoke/stream API
 
-`autochat` packages those pieces into a small async-first interface.
+`autochat` packages those pieces into a small, typed, async-first interface.
 
 ## Installation
 
@@ -54,8 +55,6 @@ uv add autochat
 
 ## Quick Start
 
-A minimal chat app with one context-aware tool:
-
 ```python
 import asyncio
 from dataclasses import dataclass
@@ -73,7 +72,7 @@ class AppContext:
 
 @chat_tool(name="current_plan")
 async def current_plan(runtime: ChatRuntime[AppContext]) -> str:
-    return f"The current user is on the {runtime.context.plan} plan."
+    return f"The user is on the {runtime.context.plan} plan."
 
 
 async def main() -> None:
@@ -102,21 +101,58 @@ Run the included examples:
 uv run python examples/basic_tool_example.py
 OPENAI_API_KEY=... uv run --dev python examples/basic_chat_example.py
 OPENAI_API_KEY=... uv run --dev python examples/basic_retriever_example.py
+OPENAI_API_KEY=... uv run --dev python examples/basic_persistence_compression_example.py
+```
+
+## Runtime Context
+
+`ChatRuntime[TContext]` is created for each chat run and passed through the graph layer.
+
+Use it to carry app-specific data like user IDs, org IDs, permissions, request metadata, database handles, or tenant config.
+
+```python
+@dataclass(frozen=True)
+class AppContext:
+    org_id: str
+    permissions: set[str]
+
+
+@chat_tool(name="billing_status")
+async def billing_status(runtime: ChatRuntime[AppContext]) -> str:
+    return f"Billing is active for {runtime.context.org_id}."
+```
+
+## Tools
+
+Use `@chat_tool` for native AutoChat tools. Function schemas are inferred from normal function parameters, and `runtime` is injected automatically.
+
+```python
+@chat_tool(name="calculator")
+async def calculator(
+    a: float,
+    b: float,
+    runtime: ChatRuntime[AppContext],
+) -> float:
+    return a + b
+```
+
+You can also wrap LangChain tools:
+
+```python
+from autochat import ChatTool
+
+chat = AutoChat(
+    config=ChatConfig(model=model),
+    tools=[ChatTool(langchain_tool)],
+)
 ```
 
 ## Tool Processors
 
-Preprocessors and postprocessors let you wrap tool execution with app logic such as auth checks, input normalization, logging, or cleanup.
+Preprocessors and postprocessors wrap tool execution with app logic such as auth checks, input normalization, logging, or cleanup.
 
 ```python
-from dataclasses import dataclass
-
-from autochat import ChatRuntime, ToolInvocation, chat_tool
-
-
-@dataclass(frozen=True)
-class AppContext:
-    permissions: set[str]
+from autochat import ToolInvocation
 
 
 def require(permission: str):
@@ -135,32 +171,82 @@ async def billing_status(runtime: ChatRuntime[AppContext]) -> str:
 
 ## Retrieval
 
-Retrievers can be added beside tools. AutoChat runs them before the model and injects the retrieved context into the graph.
+Retrievers are exposed to the model as callable retrieval tools. The model decides when to call them, and AutoChat executes the retriever with the current `ChatRuntime`.
 
 ```python
 from autochat import ChatRetriever, ChatRuntime
 
 
 async def search_docs(query: str, runtime: ChatRuntime[AppContext]) -> list[str]:
-    return [f"Docs for {runtime.context.user_id}: {query}"]
+    return [f"Docs for {runtime.context.org_id}: {query}"]
 
 
 chat = AutoChat[AppContext](
     config=ChatConfig(model=model),
-    retrievers=[ChatRetriever(search_docs, name="docs")],
+    retrievers=[
+        ChatRetriever(
+            search_docs,
+            name="docs",
+            description="Search organization documentation.",
+        )
+    ],
+    system_message="Use the docs retriever for policy or product questions.",
 )
 ```
+
+## Persistence
+
+AutoChat uses LangGraph checkpointers for thread persistence. Pass a checkpointer with `persistence=...`, and LangGraph stores graph state by `thread_id`.
+
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+
+chat = AutoChat(
+    config=ChatConfig(model=model),
+    persistence=InMemorySaver(),
+)
+```
+
+For production, swap `InMemorySaver` for a durable LangGraph saver.
+
+## Compression
+
+Compression is optional. It runs before the model call, after persisted thread state has been loaded.
+
+```python
+from autochat import AutoCompress, SummarizeAll
+from langgraph.checkpoint.memory import InMemorySaver
+
+chat = AutoChat(
+    config=ChatConfig(
+        model=model,
+        context_window=128_000,
+    ),
+    persistence=InMemorySaver(),
+    compression=AutoCompress(
+        at=0.6,
+        strategy=SummarizeAll(),
+    ),
+)
+```
+
+Available strategies:
+
+- `SummarizeAll()`: summarize older history into one summary message
+- `SummarizeLatestN(n=20)`: summarize only the latest `n` historical messages
+- `KeepLatestN(n=20)`: keep only the latest `n` messages without summarizing
+
+Summaries replace graph history using LangGraph message removal, so future turns see a compacted thread state.
 
 ## Core Pieces
 
 - `AutoChat`: public chat harness for invoke and stream workflows
-- `ChatConfig`: model and chat configuration
-- `ChatRuntime[TContext]`: per-run context passed through graph/tool execution
-- `ChatTool`: wrapper for LangChain tools and AutoChat-native tools
-- `@chat_tool`: decorator for native context-aware tools
-- `ChatRetriever`: wrapper for LangChain retrievers and AutoChat-native retrievers
-- `RetrievalConfig`: graph-level retrieval strategy configuration
-- `ChatGuideline`: lightweight instruction primitive for reusable behavior rules
+- `ChatConfig`: model configuration and context-window metadata
+- `ChatRuntime[TContext]`: per-run context passed through graph execution
+- `ChatTool` / `@chat_tool`: LangChain-compatible and native context-aware tools
+- `ChatRetriever`: LangChain-compatible and native context-aware retrievers
+- `AutoCompress`: optional automatic thread compression
+- `ChatGuideline`: lightweight reusable instruction primitive
 
 ## Project Structure
 
@@ -174,13 +260,15 @@ src/autochat/
   runtime/             Invocation-scoped runtime context
   tools/               ChatTool, @chat_tool, processor types
   retrieval/           ChatRetriever, retrieval config, RAG strategies
-  graph/               LangGraph state, builder, runtime wiring, tool execution
+  compression/         AutoCompress and compression strategies
+  graph/               LangGraph state, builder, runtime wiring, execution
   exceptions/          Library exception types
 
 examples/
-  basic_tool_example.py       Context-aware tool and processor example
-  basic_chat_example.py       AutoChat + model + tools example
-  basic_retriever_example.py  AutoChat + retriever example
+  basic_tool_example.py                    Context-aware tool + processor
+  basic_chat_example.py                    AutoChat + model + tools
+  basic_retriever_example.py               AutoChat + retriever
+  basic_persistence_compression_example.py Persistence + compression
 ```
 
 The intended dependency direction is:
@@ -188,7 +276,7 @@ The intended dependency direction is:
 ```text
 AutoChat
   -> graph
-      -> tools / retrieval
+      -> tools / retrieval / compression
           -> runtime
 ```
 
@@ -202,14 +290,15 @@ Before changing internals, run the examples when relevant:
 uv run python examples/basic_tool_example.py
 uv run --dev python examples/basic_chat_example.py
 uv run --dev python examples/basic_retriever_example.py
+uv run --dev python examples/basic_persistence_compression_example.py
 ```
 
 Design preferences:
 
 - async-first internally
 - explicit runtime context
-- clean native tools
-- LangChain compatibility where useful
+- native primitives with LangChain compatibility
+- LangGraph persistence instead of custom thread storage
 - minimal graph details in user-facing APIs
 
 ## License

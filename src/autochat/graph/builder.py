@@ -7,9 +7,11 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from autochat.compression import AutoCompress
 from autochat.config import ChatConfig
 from autochat.graph.state import ChatGraphState, ChatGraphUpdate
 from autochat.graph.tools import run_tool_calls
+from autochat.graph.runtime import get_runtime
 from autochat.guidelines import ChatGuideline
 from autochat.retrieval import (
     ChatRetriever,
@@ -62,6 +64,7 @@ def build_chat_graph(
     tools: Sequence[ChatTool[Any, Any, Any]],
     retrievers: Sequence[ChatRetriever[Any]],
     retrieval: RetrievalConfig[Any],
+    compression: AutoCompress[Any] | None,
     system_message: str | None,
     guidelines: Sequence[ChatGuideline],
     persistence: BaseCheckpointSaver | None,
@@ -115,10 +118,33 @@ def build_chat_graph(
         messages: list[BaseMessage] = list(tool_messages)
         return {"messages": messages}
 
+    async def compress_messages(
+        state: ChatGraphState,
+        config: RunnableConfig,
+    ) -> ChatGraphUpdate:
+        if compression is None:
+            return {"messages": []}
+
+        messages = await compression.acompress_if_needed(
+            list(state["messages"]),
+            runtime=get_runtime(config),
+            config=chat_config,
+        )
+        if messages is None:
+            return {"messages": []}
+
+        return {"messages": messages}
+
     graph.add_node("agent", call_model)
     graph.add_node("tools", call_tools)
 
-    graph.add_edge(START, "agent")
+    if compression:
+        graph.add_node("compression", compress_messages)
+        graph.add_edge(START, "compression")
+        graph.add_edge("compression", "agent")
+    else:
+        graph.add_edge(START, "agent")
+
     graph.add_conditional_edges("agent", should_continue)
     graph.add_edge("tools", "agent")
 

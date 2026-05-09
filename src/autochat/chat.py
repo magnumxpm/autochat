@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from autochat.config import ChatConfig
+from autochat.compression import AutoCompress
 from autochat.graph.builder import build_chat_graph
 from autochat.graph.runtime import with_runtime_config
 from autochat.guidelines import ChatGuideline
@@ -25,6 +26,7 @@ class AutoChat(Generic[TContext]):
         retrievers: Sequence[ChatRetriever[TContext]] = (),
         retrieval: RetrievalConfig[TContext] | None = None,
         persistence: BaseCheckpointSaver | None = None,
+        compression: AutoCompress[TContext] | None = None,
         system_message: str | None = None,
         guidelines: Sequence[ChatGuideline] = (),
     ) -> None:
@@ -35,12 +37,14 @@ class AutoChat(Generic[TContext]):
         self.system_message = system_message
         self.guidelines = tuple(guidelines)
         self.persistence = persistence
+        self.compression = compression
 
         self._graph = build_chat_graph(
             config=config,
             tools=self.tools,
             retrievers=self.retrievers,
             retrieval=self.retrieval,
+            compression=compression,
             system_message=system_message,
             guidelines=self.guidelines,
             persistence=persistence,
