@@ -39,7 +39,7 @@ def _count_message_tokens(
                 category=UserWarning,
             )
             return model.get_num_tokens_from_messages(messages)
-    except ImportError:
+    except (ImportError, ValueError, NotImplementedError):
         return _approximate_message_tokens(messages)
 
 

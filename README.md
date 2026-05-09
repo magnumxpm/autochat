@@ -21,6 +21,7 @@ Most production chat apps need the same foundation:
 - context-aware tools and retrievers
 - thread persistence
 - optional history compression
+- a typed streaming-event API for tools, retrievers, reasoning, and compression
 - a simple async invoke/stream API
 
 `autochat` packages those pieces into a small, typed, async-first interface.
@@ -98,6 +99,7 @@ uv run python examples/basic_tool_example.py
 OPENAI_API_KEY=... uv run --dev python examples/basic_chat_example.py
 OPENAI_API_KEY=... uv run --dev python examples/basic_retriever_example.py
 OPENAI_API_KEY=... uv run --dev python examples/basic_persistence_compression_example.py
+OPENAI_API_KEY=... uv run --dev python examples/streaming_events_example.py
 ```
 
 ## Runtime Context
@@ -234,6 +236,135 @@ Available strategies:
 
 Summaries replace graph history using LangGraph message removal, so future turns see a compacted thread state.
 
+## Streaming Events
+
+`AutoChat.astream_events` yields a typed `AutoChatEvent` discriminated union — one event per moment of interest in the graph. You can `match` or `isinstance`-check each event to render token streams, tool activity, retrieval hits, reasoning, and compression progress.
+
+```python
+from autochat import (
+    AutoChatEvent,
+    MessageDeltaEvent,
+    ToolCallRequestEvent,
+    ToolCallResponseEvent,
+    RetrieverRequestEvent,
+    RetrieverResponseEvent,
+    ThinkingDeltaEvent,
+    CompressionStartEvent,
+    CompressionEndEvent,
+    MessageEndEvent,
+)
+
+
+async for event in chat.astream_events(
+    "What is our refund policy?",
+    thread_id="thread_1",
+    context=app_context,
+):
+    if isinstance(event, MessageDeltaEvent):
+        print(event.delta, end="", flush=True)
+    elif isinstance(event, ThinkingDeltaEvent):
+        print(f"[thinking] {event.delta}", end="", flush=True)
+    elif isinstance(event, ToolCallRequestEvent):
+        print(f"\n[tool] {event.name}({dict(event.args)})")
+    elif isinstance(event, ToolCallResponseEvent):
+        print(f"[tool] {event.name} -> {event.result!r}")
+    elif isinstance(event, RetrieverRequestEvent):
+        print(f"\n[retriever] {event.name}({event.query!r})")
+    elif isinstance(event, RetrieverResponseEvent):
+        print(f"[retriever] {event.name} -> {len(event.documents)} docs")
+    elif isinstance(event, (CompressionStartEvent, CompressionEndEvent)):
+        print(f"\n[{event.type}] {event.strategy}")
+    elif isinstance(event, MessageEndEvent):
+        # event.message is an AutoChat-owned AssistantMessage —
+        # forward it directly to your end-user without parsing chunks.
+        final_message = event.message
+```
+
+### Event types
+
+Every event carries `run_id`, `thread_id`, and `timestamp` in addition to its own payload.
+
+| Event | When it fires | Key fields |
+|---|---|---|
+| `RunStartEvent` | graph begins | `input` |
+| `RunEndEvent` | graph completes | — |
+| `MessageStartEvent` | model begins emitting an assistant message | `message_id` |
+| `MessageDeltaEvent` | text token chunk from the model | `message_id`, `delta` |
+| `MessageEndEvent` | assistant message complete | `message: AssistantMessage` |
+| `ThinkingStartEvent` | reasoning/CoT block opens | `block_id` |
+| `ThinkingDeltaEvent` | reasoning token chunk | `block_id`, `delta` |
+| `ThinkingEndEvent` | reasoning block closes | `block: ThinkingBlock` |
+| `ToolCallRequestEvent` | a tool is about to run | `tool_call_id`, `name`, `args` |
+| `ToolCallResponseEvent` | a tool returned (or errored) | `tool_call_id`, `name`, `result`, `error` |
+| `RetrieverRequestEvent` | a retriever is about to run | `tool_call_id`, `name`, `query` |
+| `RetrieverResponseEvent` | retriever returned `RetrievedDocument`s | `tool_call_id`, `name`, `documents`, `error` |
+| `CompressionStartEvent` | `AutoCompress` is about to compress | `strategy`, `message_count_before` |
+| `CompressionEndEvent` | compression finished or was skipped | `strategy`, `compressed`, `message_count_after` |
+| `ErrorEvent` | a node raised an exception | `node`, `error` |
+
+### `AssistantMessage` on `MessageEndEvent`
+
+`MessageEndEvent.message` is an AutoChat-owned `AssistantMessage` — provider-agnostic and safe to send directly to your end-users without inspecting individual chunks.
+
+```python
+@dataclass(frozen=True)
+class AssistantMessage:
+    id: str
+    content: str                           # joined text content
+    thinking: tuple[ThinkingBlock, ...]    # extracted reasoning blocks
+    tool_calls: tuple[ToolCallSpec, ...]   # tool calls the model requested
+    usage: UsageInfo | None                # input/output/total tokens
+```
+
+This means you can choose your level of granularity:
+
+- subscribe to `MessageDeltaEvent` for token-by-token rendering, **or**
+- ignore the deltas entirely and forward `MessageEndEvent.message` once the assistant turn is complete.
+
+### Reasoning extraction (chain-of-thought)
+
+`autochat` ships per-provider extractors that map streamed reasoning into `ThinkingStartEvent` / `ThinkingDeltaEvent` / `ThinkingEndEvent`:
+
+| Provider | Extractor | Notes |
+|---|---|---|
+| Anthropic (Claude extended thinking) | `AnthropicThinkingExtractor` | streams `thinking` and `redacted_thinking` content blocks |
+| OpenAI o-series and GPT-5 | `OpenAIReasoningExtractor` | emits a single block at message-end (OpenAI exposes a post-hoc reasoning summary, not token-level reasoning) |
+| DeepSeek (R1 and similar) | `DeepSeekThinkingExtractor` | streams `reasoning_content` deltas |
+| Anything else | `NoOpExtractor` | emits no thinking events |
+
+The extractor is selected automatically from `ChatConfig.model`. For OpenAI, detection looks at the configured `reasoning_effort` / `reasoning` parameters first and falls back to the model name. You can register your own extractor for a custom or local model:
+
+```python
+from autochat import register_thinking_extractor, ThinkingExtractor
+
+class MyLocalThinkingExtractor(ThinkingExtractor):
+    name = "my-local"
+    ...
+
+register_thinking_extractor(
+    predicate=lambda model: getattr(model, "model_name", "") == "my-local-llm",
+    extractor=MyLocalThinkingExtractor(),
+)
+```
+
+You can also pass an extractor explicitly when constructing `AutoChat`:
+
+```python
+chat = AutoChat[AppContext](
+    config=ChatConfig(model=model),
+    thinking_extractor=MyLocalThinkingExtractor(),
+)
+```
+
+### Raw LangChain events
+
+If you need the underlying LangChain v2 stream events (for telemetry, debugging, or features outside the typed surface), use `astream_raw_events`:
+
+```python
+async for raw in chat.astream_raw_events(input, thread_id=..., context=...):
+    ...
+```
+
 ## Core Pieces
 
 - `AutoChat`: public chat harness for invoke and stream workflows
@@ -243,6 +374,9 @@ Summaries replace graph history using LangGraph message removal, so future turns
 - `ChatRetriever`: LangChain-compatible and native context-aware retrievers
 - `AutoCompress`: optional automatic thread compression
 - `ChatGuideline`: lightweight reusable instruction primitive
+- `AutoChatEvent`: typed discriminated union returned by `astream_events`
+- `AssistantMessage`: provider-agnostic assistant turn delivered on `MessageEndEvent`
+- `ThinkingExtractor`: pluggable strategy for per-provider reasoning extraction
 
 ## Project Structure
 
@@ -257,6 +391,8 @@ src/autochat/
   tools/               ChatTool, @chat_tool, processor types
   retrieval/           ChatRetriever, retrieval config, RAG strategies
   compression/         AutoCompress and compression strategies
+  events/              AutoChatEvent types, dispatch, translator
+  events/thinking/     Per-provider reasoning extractors and registry
   graph/               LangGraph state, builder, runtime wiring, execution
   exceptions/          Library exception types
 
@@ -265,6 +401,7 @@ examples/
   basic_chat_example.py                    AutoChat + model + tools
   basic_retriever_example.py               AutoChat + retriever
   basic_persistence_compression_example.py Persistence + compression
+  streaming_events_example.py              Typed AutoChatEvent rendering
 ```
 
 The intended dependency direction is:
@@ -287,6 +424,7 @@ uv run python examples/basic_tool_example.py
 uv run --dev python examples/basic_chat_example.py
 uv run --dev python examples/basic_retriever_example.py
 uv run --dev python examples/basic_persistence_compression_example.py
+uv run --dev python examples/streaming_events_example.py
 ```
 
 Design preferences:

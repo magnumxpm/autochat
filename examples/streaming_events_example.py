@@ -1,5 +1,5 @@
 """Demonstrates AutoChat's typed astream_events with a tool, retriever,
-and AutoCompress firing at 40% of context window.
+and AutoCompress firing at 10% of the tiny context window.
 
 Run:
     OPENAI_API_KEY=... uv run python examples/streaming_events_example.py
@@ -9,6 +9,7 @@ import asyncio
 from dataclasses import dataclass
 
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
 
 from autochat import (
     AssistantMessage,
@@ -218,7 +219,7 @@ async def main() -> None:
         config=ChatConfig(
             model=model,
             # Small context window so AutoCompress is easy to trigger in a demo.
-            context_window=4_000,
+            context_window=300,
         ),
         tools=[get_weather],
         retrievers=[
@@ -230,9 +231,10 @@ async def main() -> None:
             )
         ],
         compression=AutoCompress(
-            at=0.4,  # compress at 40% of context window
+            at=0.1,  # compress at 10% of context window
             strategy=SummarizeAll(),
         ),
+        persistence=InMemorySaver(),
         system_message=(
             "You are a helpful assistant. Use the get_weather tool when asked "
             "about weather, and the internal_docs retriever when asked about "
