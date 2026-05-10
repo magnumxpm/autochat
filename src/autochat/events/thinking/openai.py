@@ -32,13 +32,39 @@ class OpenAIReasoningExtractor:
         message: AIMessage,
         state: ExtractorState,
     ) -> list[ThinkingBlock]:
-        summary = self._read_summary(message)
-        if not summary:
-            return list(state.finalized)
+        # Responses API: reasoning shows up as content blocks.
+        state.finalized.extend(self._read_content_blocks(message))
 
-        block = ThinkingBlock(id=str(uuid4()), text=summary)
-        state.finalized.append(block)
+        # Chat Completions / older shapes: reasoning summary in metadata.
+        summary = self._read_summary(message)
+        if summary:
+            state.finalized.append(ThinkingBlock(id=str(uuid4()), text=summary))
+
         return list(state.finalized)
+
+    @staticmethod
+    def _read_content_blocks(message: AIMessage) -> list[ThinkingBlock]:
+        content = message.content
+        if not isinstance(content, list):
+            return []
+        blocks: list[ThinkingBlock] = []
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "reasoning":
+                continue
+            block_id = str(block.get("id") or uuid4())
+            summary_items = block.get("summary") or []
+            text_parts: list[str] = []
+            for item in summary_items:
+                if isinstance(item, dict):
+                    text = item.get("text") or item.get("summary_text") or ""
+                    if text:
+                        text_parts.append(text)
+            text = "\n".join(text_parts)
+            if not text:
+                # Skip empty-summary reasoning blocks to avoid noisy empty events.
+                continue
+            blocks.append(ThinkingBlock(id=block_id, text=text))
+        return blocks
 
     @staticmethod
     def _read_summary(message: AIMessage) -> str:

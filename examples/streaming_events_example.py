@@ -211,7 +211,12 @@ async def main() -> None:
     # automatically based on the model name pattern.
     model = ChatOpenAI(
         model="gpt-5-mini",
-        reasoning_effort="low",
+        use_responses_api=True,
+        reasoning={"effort": "medium", "summary": "detailed"},
+    )
+
+    summary_model = ChatOpenAI(
+        model="gpt-5-nano",
         use_responses_api=True,
     )
 
@@ -233,6 +238,7 @@ async def main() -> None:
         compression=AutoCompress(
             at=0.1,  # compress at 10% of context window
             strategy=SummarizeAll(),
+            model=summary_model,
         ),
         persistence=InMemorySaver(),
         system_message=(

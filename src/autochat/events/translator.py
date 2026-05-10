@@ -50,6 +50,7 @@ class EventTranslator:
         self._input_text = input_text
         self._thinking_state = ExtractorState()
         self._current_message_id: str | None = None
+        self._streamed_block_ids: set[str] = set()
         self._root_chain_id: str | None = None
         self._run_started = False
         self._run_ended = False
@@ -99,6 +100,7 @@ class EventTranslator:
         message_id = str(lc_event.get("run_id") or uuid4())
         self._current_message_id = message_id
         self._thinking_state = ExtractorState()
+        self._streamed_block_ids = set()
         yield MessageStartEvent(message_id=message_id, **self._meta())
 
     def _on_model_stream(self, lc_event: Mapping[str, Any]) -> Iterable[AutoChatEvent]:
@@ -112,6 +114,7 @@ class EventTranslator:
             chunk, lc_event, self._thinking_state
         ):
             if delta.kind == "start":
+                self._streamed_block_ids.add(delta.block_id)
                 yield ThinkingStartEvent(block_id=delta.block_id, **self._meta())
             elif delta.kind == "delta":
                 yield ThinkingDeltaEvent(
@@ -137,6 +140,21 @@ class EventTranslator:
         thinking_blocks = self._extractor.extract_from_final(
             output, self._thinking_state
         )
+
+        # For blocks the extractor surfaces only at message-end (e.g. OpenAI
+        # reasoning summaries), synthesize start/end events so consumers see
+        # the same lifecycle as streamed providers.
+        for block in thinking_blocks:
+            if block.id in self._streamed_block_ids:
+                continue
+            self._streamed_block_ids.add(block.id)
+            yield ThinkingStartEvent(block_id=block.id, **self._meta())
+            if block.text:
+                yield ThinkingDeltaEvent(
+                    block_id=block.id, delta=block.text, **self._meta()
+                )
+            yield ThinkingEndEvent(block=block, **self._meta())
+
         message = AssistantMessage.from_ai_message(
             output, thinking=tuple(thinking_blocks)
         )
