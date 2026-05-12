@@ -1,7 +1,7 @@
 import asyncio
 import inspect
 from collections.abc import Sequence
-from typing import Any, Callable, Generic, TypeVar, cast, get_type_hints, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, cast, get_type_hints, overload
 
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, create_model
@@ -16,6 +16,9 @@ from .types import (
     ToolPostprocessor,
     ToolPreprocessor,
 )
+
+if TYPE_CHECKING:
+    from autochat.hitl import ApprovalSpec
 
 T = TypeVar("T")
 TContext = TypeVar("TContext")
@@ -64,6 +67,7 @@ class ChatTool(Generic[TContext, TInput, TResult]):
         args_schema: type[BaseModel] | None = None,
         preprocessors: Sequence[ToolPreprocessor[TContext, TInput]] = (),
         postprocessors: Sequence[ToolPostprocessor[TContext, TInput, TResult]] = (),
+        approval: "ApprovalSpec | bool | None" = None,
     ) -> None: ...
 
     @overload
@@ -76,6 +80,7 @@ class ChatTool(Generic[TContext, TInput, TResult]):
         args_schema: type[BaseModel] | None = None,
         preprocessors: Sequence[ToolPreprocessor[TContext, TInput]] = (),
         postprocessors: Sequence[ToolPostprocessor[TContext, TInput, TResult]] = (),
+        approval: "ApprovalSpec | bool | None" = None,
     ) -> None: ...
 
     def __init__(
@@ -87,13 +92,17 @@ class ChatTool(Generic[TContext, TInput, TResult]):
         args_schema: type[BaseModel] | None = None,
         preprocessors: Sequence[ToolPreprocessor[TContext, TInput]] = (),
         postprocessors: Sequence[ToolPostprocessor[TContext, TInput, TResult]] = (),
+        approval: "ApprovalSpec | bool | None" = None,
     ) -> None:
+        from autochat.hitl import normalize_approval
+
         self._tool = tool
         self._name = name or self._infer_name(tool)
         self._description = description or self._infer_description(tool)
         self._preprocessors = preprocessors
         self._postprocessors = postprocessors
         self._args_schema = args_schema or self._infer_args_schema(tool)
+        self._approval = normalize_approval(approval)
 
     @property
     def name(self) -> str:
@@ -106,6 +115,10 @@ class ChatTool(Generic[TContext, TInput, TResult]):
     @property
     def raw_tool(self) -> BaseTool | ContextToolFn:
         return self._tool
+
+    @property
+    def approval(self) -> "ApprovalSpec | None":
+        return self._approval
 
     def model_tool(self) -> BaseTool | dict[str, Any]:
         if isinstance(self._tool, BaseTool):
@@ -257,6 +270,13 @@ class ChatTool(Generic[TContext, TInput, TResult]):
             return tool.description
 
         return inspect.getdoc(tool)
+
+    def make_invocation(
+        self,
+        input: TInput,
+        runtime: ChatRuntime[TContext],
+    ) -> ToolInvocation[TContext, TInput]:
+        return self._make_invocation(self._coerce_input(input), runtime)
 
     def _make_invocation(
         self,

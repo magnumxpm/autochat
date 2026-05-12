@@ -18,6 +18,8 @@ from autochat.graph.runtime import get_runtime
 from autochat.graph.state import ChatGraphState, ChatGraphUpdate
 from autochat.graph.tools import run_tool_calls
 from autochat.guidelines import ChatGuideline
+from autochat.hitl import HITL
+from autochat.hitl.builtin import build_ask_user_tool
 from autochat.retrieval import (
     ChatRetriever,
     RetrievalConfig,
@@ -73,9 +75,15 @@ def build_chat_graph(
     system_message: str | None,
     guidelines: Sequence[ChatGuideline],
     persistence: BaseCheckpointSaver | None,
+    hitl: HITL | None = None,
 ) -> CompiledStateGraph:
     graph = StateGraph(ChatGraphState)
     system_messages = build_system_messages(system_message, guidelines)
+
+    if hitl is not None and hitl.allow_questions:
+        existing_names = {tool.name for tool in tools} | {r.name for r in retrievers}
+        if "ask_user" not in existing_names:
+            tools = (*tools, build_ask_user_tool())
 
     chat_config = config
     model = chat_config.model

@@ -2,6 +2,7 @@ from typing import Any, Mapping, Sequence
 
 from langchain_core.callbacks.manager import adispatch_custom_event
 
+from autochat.hitl import HITLRequest
 from autochat.retrieval import RetrievedDocument
 
 TOOL_REQUEST = "autochat.tool.request"
@@ -10,6 +11,8 @@ RETRIEVER_REQUEST = "autochat.retriever.request"
 RETRIEVER_RESPONSE = "autochat.retriever.response"
 COMPRESSION_START = "autochat.compression.start"
 COMPRESSION_END = "autochat.compression.end"
+HITL_REQUESTED = "autochat.hitl.requested"
+HITL_RESOLVED = "autochat.hitl.resolved"
 ERROR = "autochat.error"
 
 
@@ -101,6 +104,20 @@ async def emit_compression_end(
             "compressed": compressed,
             "message_count_after": message_count_after,
         },
+    )
+
+
+async def emit_hitl_requested(request: HITLRequest) -> None:
+    await adispatch_custom_event(
+        HITL_REQUESTED,
+        {"request": request},
+    )
+
+
+async def emit_hitl_resolved(request_id: str, response: Mapping[str, Any]) -> None:
+    await adispatch_custom_event(
+        HITL_RESOLVED,
+        {"request_id": request_id, "response": dict(response)},
     )
 
 

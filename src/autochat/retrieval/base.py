@@ -1,6 +1,6 @@
 import inspect
 from collections.abc import Sequence
-from typing import Any, Generic, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
@@ -16,6 +16,9 @@ from .types import (
     RetrieverPostprocessor,
     RetrieverPreprocessor,
 )
+
+if TYPE_CHECKING:
+    from autochat.hitl import ApprovalSpec
 
 TContext = TypeVar("TContext")
 
@@ -35,6 +38,7 @@ class ChatRetriever(Generic[TContext]):
         metadata: dict[str, Any] | None = None,
         preprocessors: Sequence[RetrieverPreprocessor[TContext]] = (),
         postprocessors: Sequence[RetrieverPostprocessor[TContext]] = (),
+        approval: "ApprovalSpec | bool | None" = None,
     ) -> None: ...
 
     @overload
@@ -49,6 +53,7 @@ class ChatRetriever(Generic[TContext]):
         metadata: dict[str, Any] | None = None,
         preprocessors: Sequence[RetrieverPreprocessor[TContext]] = (),
         postprocessors: Sequence[RetrieverPostprocessor[TContext]] = (),
+        approval: "ApprovalSpec | bool | None" = None,
     ) -> None: ...
 
     def __init__(
@@ -62,7 +67,10 @@ class ChatRetriever(Generic[TContext]):
         metadata: dict[str, Any] | None = None,
         preprocessors: Sequence[RetrieverPreprocessor[TContext]] = (),
         postprocessors: Sequence[RetrieverPostprocessor[TContext]] = (),
+        approval: "ApprovalSpec | bool | None" = None,
     ) -> None:
+        from autochat.hitl import normalize_approval
+
         if top_k < 1:
             raise ValueError("ChatRetriever top_k must be greater than zero.")
 
@@ -74,6 +82,7 @@ class ChatRetriever(Generic[TContext]):
         self._metadata = metadata or {}
         self._preprocessors = tuple(preprocessors)
         self._postprocessors = tuple(postprocessors)
+        self._approval = normalize_approval(approval)
 
     @property
     def name(self) -> str:
@@ -90,6 +99,10 @@ class ChatRetriever(Generic[TContext]):
     @property
     def raw_retriever(self) -> BaseRetriever | RetrieverFn[TContext]:
         return self._retriever
+
+    @property
+    def approval(self) -> "ApprovalSpec | None":
+        return self._approval
 
     async def aretrieve(
         self,
@@ -138,6 +151,13 @@ class ChatRetriever(Generic[TContext]):
                 },
             },
         }
+
+    def make_invocation(
+        self,
+        query: str,
+        runtime: ChatRuntime[TContext],
+    ) -> RetrievalInvocation[TContext]:
+        return self._make_invocation(query, runtime)
 
     def _make_invocation(
         self,

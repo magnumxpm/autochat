@@ -6,10 +6,14 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 from autochat.retrieval import RetrievedDocument
 from autochat.runtime import ChatRuntime
 
+from autochat.hitl import HITLRequest
+
 from .dispatch import (
     COMPRESSION_END,
     COMPRESSION_START,
     ERROR,
+    HITL_REQUESTED,
+    HITL_RESOLVED,
     RETRIEVER_REQUEST,
     RETRIEVER_RESPONSE,
     TOOL_REQUEST,
@@ -22,6 +26,8 @@ from .types import (
     CompressionEndEvent,
     CompressionStartEvent,
     ErrorEvent,
+    HITLRequestedEvent,
+    HITLResolvedEvent,
     MessageDeltaEvent,
     MessageEndEvent,
     MessageStartEvent,
@@ -208,6 +214,16 @@ class EventTranslator:
                 strategy=data.get("strategy") or "",
                 compressed=bool(data.get("compressed")),
                 message_count_after=int(data.get("message_count_after") or 0),
+                **self._meta(),
+            )
+        elif name == HITL_REQUESTED:
+            request = data.get("request")
+            if isinstance(request, HITLRequest):
+                yield HITLRequestedEvent(request=request, **self._meta())
+        elif name == HITL_RESOLVED:
+            yield HITLResolvedEvent(
+                request_id=data.get("request_id") or "",
+                response=data.get("response") or {},
                 **self._meta(),
             )
         elif name == ERROR:

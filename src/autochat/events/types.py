@@ -3,6 +3,7 @@ from typing import Annotated, Any, Literal, Mapping, Union
 
 from pydantic import BaseModel, Field
 
+from autochat.hitl import HITLRequest
 from autochat.retrieval import RetrievedDocument
 
 from .message import AssistantMessage, ThinkingBlock
@@ -106,6 +107,17 @@ class CompressionEndEvent(_EventBase):
     message_count_after: int
 
 
+class HITLRequestedEvent(_EventBase):
+    type: Literal["hitl.requested"] = "hitl.requested"
+    request: HITLRequest
+
+
+class HITLResolvedEvent(_EventBase):
+    type: Literal["hitl.resolved"] = "hitl.resolved"
+    request_id: str
+    response: Mapping[str, Any]
+
+
 class ErrorEvent(_EventBase):
     type: Literal["error"] = "error"
     node: str
@@ -129,6 +141,8 @@ AutoChatEvent = Annotated[
         RetrieverResponseEvent,
         CompressionStartEvent,
         CompressionEndEvent,
+        HITLRequestedEvent,
+        HITLResolvedEvent,
         ErrorEvent,
     ],
     Field(discriminator="type"),
